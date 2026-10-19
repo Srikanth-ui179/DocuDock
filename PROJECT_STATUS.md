@@ -39,16 +39,17 @@
 
 ---
 
-- **Live PostgreSQL & pgvector**: **Verified live against Supabase**. Tables `documents` and `document_chunks`, HNSW indexes, and vector functions `match_document_chunks_768` and `match_document_chunks_1536` are active and functional.
+- **Live PostgreSQL & pgvector**: **Verified live against Supabase**. Tables `documents` and `document_chunks`, HNSW cosine distance indexes, and vector RPC functions `match_document_chunks_768` and `match_document_chunks_1536` are active and operational.
 - **Live Private Storage**: **Verified live against Supabase**. Bucket `documents` is active, private (`public = false`), enforces 10MB limit and `application/pdf`, with 4 owner-scoped RLS policies.
-- **Live Supabase Auth Endpoint**: **Verified live**. Generates `/auth/v1/authorize` Google redirect URLs.
+- **Live Google OAuth Handshake**: **Verified live**. Calling Supabase OAuth initiates a 302 redirect directly to `https://accounts.google.com/o/oauth2/v2/auth`.
+- **Live Development Server & Route Protection**: **Verified live**. Next.js App Router server is running on `http://localhost:3000`. Unauthenticated requests to `/` and `/workspace` cleanly redirect to `/login` with HTTP 307.
 
 ---
 
-## 2. Pending Third-Party Credentials
+## 2. Pending Actions at Runtime
 
-- **Google Cloud OAuth Client Credentials**: Needs Client ID and Secret entered into Supabase to complete end-to-end user browser sign-in.
-- **User API Key (Google AI Studio / OpenAI)**: Provided by user directly in browser memory at runtime.
+- **User Google Account Consent**: Complete the browser-based Google account selection once at `http://localhost:3000/login`.
+- **User AI Provider API Key**: Provide personal Google AI Studio or OpenAI API key in the workspace settings modal to index documents and generate grounded answers.
 
 ---
 
