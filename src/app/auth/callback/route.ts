@@ -8,6 +8,12 @@ export async function GET(request: Request) {
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/workspace';
 
+  // Check for OAuth provider errors (e.g. user cancelled login or access denied)
+  const authError = searchParams.get('error_description') || searchParams.get('error');
+  if (authError) {
+    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(authError)}`);
+  }
+
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -21,9 +27,10 @@ export async function GET(request: Request) {
       } else {
         return NextResponse.redirect(`${origin}${next}`);
       }
+    } else {
+      return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
     }
   }
 
-  // If error exchanging code, redirect to login with error query param
-  return NextResponse.redirect(`${origin}/login?error=auth-exchange-failed`);
+  return NextResponse.redirect(`${origin}/login?error=auth-missing-code`);
 }

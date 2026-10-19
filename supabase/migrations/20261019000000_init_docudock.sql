@@ -121,6 +121,15 @@ CREATE POLICY "Users can read own documents from storage"
         (storage.foldername(name))[1] = auth.uid()::text
     );
 
+DROP POLICY IF EXISTS "Users can update own documents in storage" ON storage.objects;
+CREATE POLICY "Users can update own documents in storage"
+    ON storage.objects FOR UPDATE
+    TO authenticated
+    USING (
+        bucket_id = 'documents' AND
+        (storage.foldername(name))[1] = auth.uid()::text
+    );
+
 DROP POLICY IF EXISTS "Users can delete own documents from storage" ON storage.objects;
 CREATE POLICY "Users can delete own documents from storage"
     ON storage.objects FOR DELETE
@@ -130,8 +139,23 @@ CREATE POLICY "Users can delete own documents from storage"
         (storage.foldername(name))[1] = auth.uid()::text
     );
 
--- 9. RPC Functions for vector retrieval
--- 9a. Vector search for 768 dimensions (Google Gemini gemini-embedding-001)
+-- 9. Trigger for automatic updated_at timestamp on documents
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS set_documents_updated_at ON public.documents;
+CREATE TRIGGER set_documents_updated_at
+    BEFORE UPDATE ON public.documents
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
+-- 10. RPC Functions for vector retrieval
+-- 10a. Vector search for 768 dimensions (Google Gemini gemini-embedding-001)
 CREATE OR REPLACE FUNCTION match_document_chunks_768 (
     query_embedding vector(768),
     match_threshold float DEFAULT 0.0,
