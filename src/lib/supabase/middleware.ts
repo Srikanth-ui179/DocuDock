@@ -43,13 +43,21 @@ export async function updateSession(request: NextRequest) {
   if (!user && path.startsWith('/workspace')) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    supabaseResponse.cookies.getAll().forEach((c) => {
+      redirectResponse.cookies.set(c);
+    });
+    return redirectResponse;
   }
 
   if (user && (path === '/login' || path === '/')) {
     const url = request.nextUrl.clone();
     url.pathname = '/workspace';
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    supabaseResponse.cookies.getAll().forEach((c) => {
+      redirectResponse.cookies.set(c);
+    });
+    return redirectResponse;
   }
 
   return supabaseResponse;

@@ -5,7 +5,7 @@ export const PROVIDER_OPTIONS: Record<AIProvider, ProviderOption> = {
     id: 'gemini',
     name: 'Google Gemini',
     description: 'Fast, high-fidelity embeddings (768-dim) and reasoning via Google AI Studio',
-    embeddingModel: 'text-embedding-004',
+    embeddingModel: 'gemini-embedding-001',
     embeddingDim: 768,
     chatModel: 'gemini-2.5-flash',
     keyUrl: 'https://aistudio.google.com/app/apikey',
@@ -88,15 +88,16 @@ export async function generateQueryEmbedding(
   if (!trimmedText) throw new ProviderError('Query text cannot be empty');
 
   if (provider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${cleanKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${cleanKey}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'models/text-embedding-004',
+        model: 'models/gemini-embedding-001',
         content: {
           parts: [{ text: trimmedText }],
         },
+        outputDimensionality: 768,
       }),
     });
 
@@ -158,10 +159,11 @@ export async function generateBatchEmbeddings(
 
     for (let i = 0; i < texts.length; i += batchSize) {
       const slice = texts.slice(i, i + batchSize);
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=${cleanKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=${cleanKey}`;
       const requests = slice.map((t) => ({
-        model: 'models/text-embedding-004',
+        model: 'models/gemini-embedding-001',
         content: { parts: [{ text: t }] },
+        outputDimensionality: 768,
       }));
 
       const res = await fetch(url, {
