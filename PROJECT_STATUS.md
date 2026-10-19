@@ -39,12 +39,16 @@
 
 ---
 
-## 2. Unverified Integrations (Pending External Credentials)
+- **Live PostgreSQL & pgvector**: **Verified live against Supabase**. Tables `documents` and `document_chunks`, HNSW indexes, and vector functions `match_document_chunks_768` and `match_document_chunks_1536` are active and functional.
+- **Live Private Storage**: **Verified live against Supabase**. Bucket `documents` is active, private (`public = false`), enforces 10MB limit and `application/pdf`, with 4 owner-scoped RLS policies.
+- **Live Supabase Auth Endpoint**: **Verified live**. Generates `/auth/v1/authorize` Google redirect URLs.
 
-The following integrations are implemented in code but have **not** been run against live third-party cloud services because external credentials have not yet been provided:
-- **Live Supabase Google OAuth**: Requires active `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` and Google Cloud OAuth client credentials in Supabase.
-- **Live PostgreSQL / pgvector Storage**: Requires applying the migration script to an active Supabase database.
-- **Live OpenAI / Google Gemini API Calls**: Requires entering a valid user API key into the in-memory settings modal in a running browser session.
+---
+
+## 2. Pending Third-Party Credentials
+
+- **Google Cloud OAuth Client Credentials**: Needs Client ID and Secret entered into Supabase to complete end-to-end user browser sign-in.
+- **User API Key (Google AI Studio / OpenAI)**: Provided by user directly in browser memory at runtime.
 
 ---
 
