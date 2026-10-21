@@ -128,4 +128,5 @@
 2. **Google OAuth**: Configured and verified.
 3. **Local Environment**: `.env.local` configured.
 4. **Dev Server**: Running at `http://localhost:3000`.
+5. **Production Deployment**: Live at `https://docudock.vercel.app` (Vercel Hobby Free Tier).
 
