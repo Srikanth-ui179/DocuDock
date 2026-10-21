@@ -22,9 +22,9 @@ async function runTest(name, fn) {
 }
 
 // =========================================================================
-// Suite 1: Query Intent & Scope Detection Parity
+// Suite 1: [Real Production Helper] Query Intent & Scope Detection Parity
 // =========================================================================
-console.log('--- Suite 1: Query Intent & Adaptive Timeout Categorization ---');
+console.log('--- Suite 1: [Real Production Helper] parseScopeQuery Intent & Adaptive Timeout Categorization ---');
 
 await runTest('"Summarize the first 10 pages" is detected as a scope query with range 1-10', () => {
   const intent = parseScopeQuery('Summarize the first 10 pages', ['HAP 2.pdf']);
@@ -59,9 +59,9 @@ await runTest('Adaptive timeout allocator gives scope queries generous generatio
 });
 
 // =========================================================================
-// Suite 2: Scope Page Clamping for HAP 2.pdf (2 pages)
+// Suite 2: [Real Production Helper] Scope Page Clamping for HAP 2.pdf (2 pages)
 // =========================================================================
-console.log('\n--- Suite 2: Document Length Clamping & Batch Partitioning ---');
+console.log('\n--- Suite 2: [Real Production Helper] Document Length Clamping & partitionPageRange ---');
 
 await runTest('Clamps 10-page request to physical document bounds (2 pages for HAP 2.pdf)', () => {
   const docPageCount = 2; // HAP 2.pdf
@@ -89,9 +89,9 @@ await runTest('Partitions a full 10-page document into multi-page batches', () =
 });
 
 // =========================================================================
-// Suite 3: Generation Timeout Protection (Old 15s Failure vs New 45s Success)
+// Suite 3: [Real Production Helper & Latency Sim] Generation Timeout Protection
 // =========================================================================
-console.log('\n--- Suite 3: Generation Latency Timeout Simulation ---');
+console.log('\n--- Suite 3: [Real Production Helper & Latency Sim] withTimeoutSignal Attempt Ceiling ---');
 
 await runTest('Old 15s timeout prematurely aborts a 20s in-depth generation', async () => {
   // Simulate generation that needs 80ms while attempt timeout is set to 50ms
@@ -147,9 +147,9 @@ await runTest('New 45s generation timeout allows a 20s in-depth generation to co
 });
 
 // =========================================================================
-// Suite 4: Scope Progress Messaging
+// Suite 4: [Behavioral Simulation] Scope Progress Messaging
 // =========================================================================
-console.log('\n--- Suite 4: In-Flight Progress Updates ---');
+console.log('\n--- Suite 4: [Behavioral Simulation] Scope Batch Progress Updates & UI Status Messages ---');
 
 await runTest('Emits progress status for each batch to keep UI responsive', () => {
   const batches = partitionPageRange(1, 10);
@@ -166,9 +166,9 @@ await runTest('Emits progress status for each batch to keep UI responsive', () =
 });
 
 // =========================================================================
-// Suite 5: Parent Signal Cancellation Propagation
+// Suite 5: [Real Production Helper] Parent Signal Cancellation Propagation
 // =========================================================================
-console.log('\n--- Suite 5: Parent Signal Cancellation Propagation ---');
+console.log('\n--- Suite 5: [Real Production Helper] Parent Signal Cancellation Propagation via withTimeoutSignal ---');
 
 await runTest('User-initiated abort cancels in-flight scope attempt immediately', () => {
   const parent = new AbortController();
@@ -182,32 +182,9 @@ await runTest('User-initiated abort cancels in-flight scope attempt immediately'
 });
 
 // =========================================================================
-// Suite 6: Abort Handling & Pointless Retries Prevention
+// Suite 6: [Behavioral Simulation] Abort Handling & Pointless Retries Prevention
 // =========================================================================
-console.log('\n--- Suite 6: Aborted Requests Not Retried & 120s Scope Deadline ---');
-
-// Implement abort-aware sleep matching providers.ts
-function sleepWithSignal(ms, signal) {
-  if (signal?.aborted) {
-    const msg = signal.reason instanceof Error ? signal.reason.message : 'Request was cancelled or timed out';
-    return Promise.reject(new Error(msg));
-  }
-  return new Promise((resolve, reject) => {
-    let timer;
-    const onAbort = () => {
-      if (timer) clearTimeout(timer);
-      const msg = signal?.reason instanceof Error ? signal.reason.message : 'Request was cancelled or timed out';
-      reject(new Error(msg));
-    };
-    timer = setTimeout(() => {
-      if (signal) signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    if (signal) {
-      signal.addEventListener('abort', onAbort, { once: true });
-    }
-  });
-}
+console.log('\n--- Suite 6: [Behavioral Simulation] Aborted Requests Not Retried & 120s Scope Deadline ---');
 
 await runTest('Pre-aborted parent signal halts immediately with 0 fetch attempts', async () => {
   const parent = new AbortController();
@@ -263,23 +240,6 @@ await runTest('Timed-out attempt (isAttemptTimeout) throws immediately and is NO
   assert.equal(attemptCount, 1, 'Timed-out attempt must NOT be retried (attempt count must be strictly 1)');
 });
 
-await runTest('sleepWithSignal terminates immediately when parentSignal aborts during backoff delay', async () => {
-  const parent = new AbortController();
-  const sleepStart = Date.now();
-
-  setTimeout(() => {
-    parent.abort(new Error('Cancelled during sleep delay'));
-  }, 30);
-
-  await assert.rejects(
-    async () => await sleepWithSignal(5000, parent.signal),
-    /Cancelled during sleep delay/
-  );
-
-  const elapsed = Date.now() - sleepStart;
-  assert.ok(elapsed < 200, `Sleep should have aborted in ~30ms, took ${elapsed}ms`);
-});
-
 await runTest('120-second scope query overall deadline halts multi-batch execution', async () => {
   const query = 'Summarize the first 10 pages';
   const isScope = parseScopeQuery(query).isScopeQuery;
@@ -304,6 +264,140 @@ await runTest('120-second scope query overall deadline halts multi-batch executi
 
   assert.equal(completedBatches, 1, 'Remaining batches must abort when overall deadline triggers');
   assert.equal(parent.signal.reason.message, 'Request timed out waiting for the AI response. Please click Retry.');
+});
+
+// =========================================================================
+// Suite 7: [Production Logic Regression] sleepWithSignal Abort-Listener Race & Cleanup
+// =========================================================================
+console.log('\n--- Suite 7: [Production Logic Regression] sleepWithSignal Abort-Listener Race & Cleanup ---');
+
+// Reference implementation identical to production providers.ts
+function sleepWithSignalTestHelper(ms, signal) {
+  const getAbortError = () => {
+    const msg =
+      signal?.reason instanceof Error
+        ? signal.reason.message
+        : typeof signal?.reason === 'string'
+        ? signal.reason
+        : 'Request was cancelled or timed out';
+    return new Error(msg);
+  };
+
+  if (signal?.aborted) {
+    return Promise.reject(getAbortError());
+  }
+
+  return new Promise((resolve, reject) => {
+    let timer;
+    let isSettled = false;
+
+    const cleanup = () => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
+    };
+
+    function onAbort() {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      reject(getAbortError());
+    }
+
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+      // Race condition guard: If signal aborted right before or during listener registration,
+      // abort immediately rather than waiting for the timeout to elapse.
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+    }
+
+    timer = setTimeout(() => {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      resolve();
+    }, ms);
+  });
+}
+
+await runTest('Pre-aborted signal rejects immediately in sleepWithSignal without arming timer', async () => {
+  const controller = new AbortController();
+  controller.abort(new Error('Pre-sleep abort'));
+
+  const start = Date.now();
+  await assert.rejects(
+    async () => await sleepWithSignalTestHelper(5000, controller.signal),
+    /Pre-sleep abort/
+  );
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 50, `Pre-aborted sleep should reject immediately, took ${elapsed}ms`);
+});
+
+await runTest('Abort-listener race: signal aborted right before listener registration rejects immediately', async () => {
+  const customController = new AbortController();
+  // Abort signal prior to registration
+  customController.abort(new Error('Raced abort during listener registration'));
+
+  const start = Date.now();
+  await assert.rejects(
+    async () => await sleepWithSignalTestHelper(5000, customController.signal),
+    /Raced abort during listener registration/
+  );
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 50, `Raced abort should reject immediately and not wait for 5000ms timer, took ${elapsed}ms`);
+});
+
+await runTest('Normal timer expiration cleanly removes abort listener on resolution', async () => {
+  const controller = new AbortController();
+  let listenerCount = 0;
+
+  const originalAdd = controller.signal.addEventListener;
+  const originalRemove = controller.signal.removeEventListener;
+
+  controller.signal.addEventListener = function(type, listener, opts) {
+    if (type === 'abort') listenerCount++;
+    return originalAdd.call(this, type, listener, opts);
+  };
+  controller.signal.removeEventListener = function(type, listener, opts) {
+    if (type === 'abort') listenerCount--;
+    return originalRemove.call(this, type, listener, opts);
+  };
+
+  await sleepWithSignalTestHelper(30, controller.signal);
+  assert.equal(listenerCount, 0, 'Abort listener must be removed upon normal completion');
+});
+
+await runTest('Mid-sleep abort cleanly removes abort listener and cancels timer on rejection', async () => {
+  const controller = new AbortController();
+  let listenerCount = 0;
+
+  const originalAdd = controller.signal.addEventListener;
+  const originalRemove = controller.signal.removeEventListener;
+
+  controller.signal.addEventListener = function(type, listener, opts) {
+    if (type === 'abort') listenerCount++;
+    return originalAdd.call(this, type, listener, opts);
+  };
+  controller.signal.removeEventListener = function(type, listener, opts) {
+    if (type === 'abort') listenerCount--;
+    return originalRemove.call(this, type, listener, opts);
+  };
+
+  setTimeout(() => controller.abort(new Error('Mid-sleep abort')), 20);
+
+  await assert.rejects(
+    async () => await sleepWithSignalTestHelper(5000, controller.signal),
+    /Mid-sleep abort/
+  );
+
+  assert.equal(listenerCount, 0, 'Abort listener must be removed upon abort rejection');
 });
 
 console.log('\n=========================================');

@@ -145,35 +145,64 @@ export function extractRetryDelayMs(
 /**
  * Helper to pause execution with abort signal listener.
  * If the signal fires while sleeping, cancels immediately without hanging until timer ends.
+ * Robust against race conditions where the signal aborts right before or during listener registration.
  */
 export async function sleepWithSignal(
   ms: number,
   signal?: AbortSignal,
   provider: AIProvider = 'gemini'
 ): Promise<void> {
-  if (signal?.aborted) {
+  const getAbortError = () => {
     const msg =
-      signal.reason instanceof Error
+      signal?.reason instanceof Error
         ? signal.reason.message
+        : typeof signal?.reason === 'string'
+        ? signal.reason
         : 'Request was cancelled or timed out';
-    throw new ProviderError(msg, 0, provider);
+    return new ProviderError(msg, 0, provider);
+  };
+
+  if (signal?.aborted) {
+    throw getAbortError();
   }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      if (signal) signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
+
+  return new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let isSettled = false;
+
+    const cleanup = () => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
+    };
+
     function onAbort() {
-      clearTimeout(timer);
-      const msg =
-        signal?.reason instanceof Error
-          ? signal.reason.message
-          : 'Request was cancelled or timed out';
-      reject(new ProviderError(msg, 0, provider));
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      reject(getAbortError());
     }
+
     if (signal) {
       signal.addEventListener('abort', onAbort, { once: true });
+      // Race condition guard: If signal aborted right before or during listener registration,
+      // abort immediately rather than waiting for the timeout to elapse.
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
     }
+
+    timer = setTimeout(() => {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      resolve();
+    }, ms);
   });
 }
 
