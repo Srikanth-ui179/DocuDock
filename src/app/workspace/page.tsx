@@ -345,7 +345,8 @@ export default function WorkspacePage() {
     activeAbortControllerRef.current = abortController;
 
     // Query-adaptive timeouts: allocate generous budget for multi-page scope summaries
-    const isScope = parseScopeQuery(query).isScopeQuery;
+    const knownDocNames = documents.map((d) => d.name);
+    const isScope = parseScopeQuery(query, knownDocNames).isScopeQuery;
     const overallDeadlineMs = isScope ? 120000 : 45000;
     const perAttemptTimeoutMs = isScope ? 45000 : 25000;
 
