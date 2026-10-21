@@ -23,6 +23,7 @@ import {
   saveActiveConversationId,
 } from '@/lib/utils/conversationStorage';
 import { ConversationDrawer } from '@/components/ConversationDrawer';
+import { parseScopeQuery } from '@/lib/utils/scopeQueryParser';
 
 export default function WorkspacePage() {
   const router = useRouter();
@@ -343,10 +344,15 @@ export default function WorkspacePage() {
     const abortController = new AbortController();
     activeAbortControllerRef.current = abortController;
 
-    // Timeout safety: guarantees loading indicator never hangs indefinitely (45s bounded overall deadline)
+    // Query-adaptive timeouts: allocate generous budget for multi-page scope summaries
+    const isScope = parseScopeQuery(query).isScopeQuery;
+    const overallDeadlineMs = isScope ? 120000 : 45000;
+    const perAttemptTimeoutMs = isScope ? 45000 : 25000;
+
+    // Timeout safety: guarantees loading indicator never hangs indefinitely
     const timeoutTimer = setTimeout(() => {
       abortController.abort(new Error('Request timed out waiting for the AI response. Please click Retry.'));
-    }, 45000);
+    }, overallDeadlineMs);
 
     try {
       const result = await executeRAGQuery(
@@ -356,7 +362,7 @@ export default function WorkspacePage() {
         {
           filterDocumentIds: selectedDocIds.length > 0 ? selectedDocIds : undefined,
           signal: abortController.signal,
-          timeoutMs: 15000,
+          timeoutMs: perAttemptTimeoutMs,
           onProgress: (status) => setLoadingStatusMessage(status),
         }
       );

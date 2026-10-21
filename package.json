@@ -20,7 +20,8 @@
     "test:regression:short": "node scripts/test-short-vs-scope-regression.mjs",
     "test:mock": "node scripts/test-mock-provider.mjs",
     "test:theme": "node scripts/test-theme-toggle.mjs",
-    "test:vault": "node scripts/test-key-vault.mjs"
+    "test:vault": "node scripts/test-key-vault.mjs",
+    "test:timeout": "node scripts/test-scope-timeout-regression.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

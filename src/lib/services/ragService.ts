@@ -225,6 +225,9 @@ async function executeScopeQuery(
     content: c.content,
   }));
 
+  // Scope explanations require generous per-batch generation budget (min 45s)
+  const scopeTimeoutMs = Math.max(options?.timeoutMs || 0, 45000);
+
   let answer: string;
   try {
     answer = await generateBatchedScopeExplanation(
@@ -238,7 +241,7 @@ async function executeScopeQuery(
       missingPages,
       {
         signal: options?.signal,
-        timeoutMs: options?.timeoutMs,
+        timeoutMs: scopeTimeoutMs,
         onProgress: options?.onProgress,
       }
     );

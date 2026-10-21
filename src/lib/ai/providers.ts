@@ -143,6 +143,41 @@ export function extractRetryDelayMs(
 }
 
 /**
+ * Helper to pause execution with abort signal listener.
+ * If the signal fires while sleeping, cancels immediately without hanging until timer ends.
+ */
+export async function sleepWithSignal(
+  ms: number,
+  signal?: AbortSignal,
+  provider: AIProvider = 'gemini'
+): Promise<void> {
+  if (signal?.aborted) {
+    const msg =
+      signal.reason instanceof Error
+        ? signal.reason.message
+        : 'Request was cancelled or timed out';
+    throw new ProviderError(msg, 0, provider);
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      const msg =
+        signal?.reason instanceof Error
+          ? signal.reason.message
+          : 'Request was cancelled or timed out';
+      reject(new ProviderError(msg, 0, provider));
+    }
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
+/**
  * Executes a fetch request with bounded exponential backoff, jitter, and quota/rate-limit retry.
  * Avoids hammering overloaded models or burning quota on exhausted tiers.
  */
@@ -156,8 +191,8 @@ export async function fetchWithRetry(
   const initialDelay = retryOpts?.initialDelayMs ?? 1200;
   const maxDelay = retryOpts?.maxDelayMs ?? 6000;
   const maxOverloadRetries = retryOpts?.maxOverloadRetries ?? 1;
-  const timeoutMs = retryOpts?.timeoutMs ?? 15000;
-  const parentSignal = retryOpts?.signal;
+  const timeoutMs = retryOpts?.timeoutMs ?? 25000;
+  const parentSignal = retryOpts?.signal || (options as { signal?: AbortSignal })?.signal;
 
   let overloadRetriesCount = 0;
 
@@ -190,17 +225,20 @@ export async function fetchWithRetry(
         (networkErr instanceof Error && networkErr.name === 'AbortError') ||
         (networkErr instanceof Error && networkErr.message.includes('timed out'));
 
+      // If the attempt timed out or was aborted, do NOT retry pointlessly!
+      // Retrying a 25s/45s timed-out attempt will only exhaust the overall deadline and delay error reporting.
+      if (isAttemptTimeout) {
+        const rawMsg = `Request timed out after ${timeoutMs}ms waiting for ${provider} response`;
+        throw new ProviderError(sanitizeErrorMessage(rawMsg), 0, provider);
+      }
+
+      // For genuine transient network drops (e.g. connection reset), retry with backoff if attempts remain
       if (attempt < maxRetries) {
         const delay = Math.min(initialDelay * Math.pow(1.5, attempt), maxDelay);
-        if (parentSignal?.aborted) {
-          throw new ProviderError('Request timed out waiting for AI response', 0, provider);
-        }
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await sleepWithSignal(delay, parentSignal, provider);
         continue;
       }
-      const rawMsg = isAttemptTimeout
-        ? `Request timed out after ${timeoutMs}ms waiting for ${provider} response`
-        : networkErr instanceof Error
+      const rawMsg = networkErr instanceof Error
         ? networkErr.message
         : 'Network error';
       throw new ProviderError(sanitizeErrorMessage(rawMsg), 0, provider);
@@ -277,7 +315,7 @@ export async function fetchWithRetry(
 
       retryOpts?.onRetry?.(attempt + 1, delaySec, sanitizeErrorMessage(errMsg));
 
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await sleepWithSignal(delayMs, parentSignal, provider);
       continue;
     }
 
@@ -627,7 +665,7 @@ export async function generateQueryEmbedding(
           maxRetries: 1,
           initialDelayMs: 1000,
           maxDelayMs: 4000,
-          timeoutMs: options?.timeoutMs ?? 15000,
+          timeoutMs: options?.timeoutMs ?? 25000,
           signal: options?.signal,
         }
       );
@@ -688,7 +726,7 @@ export async function generateQueryEmbedding(
         maxRetries: 1,
         initialDelayMs: 1000,
         maxDelayMs: 4000,
-        timeoutMs: options?.timeoutMs ?? 15000,
+        timeoutMs: options?.timeoutMs ?? 25000,
         signal: options?.signal,
       }
     );
@@ -1093,7 +1131,7 @@ export async function callLLMTextGenerationDetailed(
           maxOverloadRetries: 1,
           initialDelayMs: 1000,
           maxDelayMs: 4000,
-          timeoutMs: options?.timeoutMs ?? 15000,
+          timeoutMs: options?.timeoutMs ?? 25000,
           signal: options?.signal,
         }
       );
@@ -1323,7 +1361,7 @@ export async function callLLMTextGenerationDetailed(
         maxRetries: 2,
         initialDelayMs: 1500,
         maxDelayMs: 6000,
-        timeoutMs: options?.timeoutMs ?? 15000,
+        timeoutMs: options?.timeoutMs ?? 25000,
         signal: options?.signal,
       }
     );
@@ -1558,6 +1596,14 @@ export async function generateBatchedScopeExplanation(
   let highestCompletedPage = startPage - 1;
 
   for (let i = 0; i < batches.length; i++) {
+    if (options?.signal?.aborted) {
+      const abortMsg =
+        options.signal.reason instanceof Error
+          ? options.signal.reason.message
+          : 'Request was cancelled or timed out';
+      throw new ProviderError(abortMsg, 0, provider);
+    }
+
     const { startPage: bStart, endPage: bEnd } = batches[i];
     const bPassages = pagePassages.filter(
       (p) => p.page_number >= bStart && p.page_number <= bEnd
@@ -1572,6 +1618,7 @@ export async function generateBatchedScopeExplanation(
     }
 
     const batchQuery = `${userQuery} (Part ${i + 1} of ${batches.length}: Covering Pages ${bStart} to ${bEnd})`;
+    options?.onProgress?.(`Generating explanation for pages ${bStart}–${bEnd} (Part ${i + 1} of ${batches.length})...`);
     let batchResult = await generateScopeExplanation(
       provider,
       apiKey,
@@ -1629,7 +1676,7 @@ export async function generateBatchedScopeExplanation(
 
     // Inter-batch pacing to avoid burst rate-limit / TPM exhaustion on providers
     if (i + 1 < batches.length) {
-      await new Promise((resolve) => setTimeout(resolve, 650));
+      await sleepWithSignal(650, options?.signal, provider);
     }
   }
 
