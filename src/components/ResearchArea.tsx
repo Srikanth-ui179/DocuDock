@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage, Citation } from '@/lib/types';
+import { ChatMessage, Citation, AIProvider } from '@/lib/types';
+import { FormattedAnswer } from './FormattedAnswer';
 import {
   Send,
   Loader2,
@@ -13,35 +14,50 @@ import {
   RotateCcw,
   Layers,
   ChevronRight,
+  MessageSquare,
+  Plus,
+  ExternalLink,
 } from 'lucide-react';
 
 interface ResearchAreaProps {
   messages: ChatMessage[];
-  onSendMessage: (query: string) => Promise<void>;
+  onSendMessage: (query: string, options?: { isRetry?: boolean; failedMessageId?: string }) => Promise<void>;
   isLoading: boolean;
+  loadingStatusMessage?: string;
   onClearConversation: () => void;
   onSelectCitation: (citation: Citation) => void;
   selectedDocCount: number;
   totalReadyDocCount: number;
   isConnected: boolean;
+  provider?: AIProvider;
   onOpenSettings: () => void;
+  conversationTitle?: string;
+  onOpenHistory?: () => void;
+  onNewConversation?: () => void;
 }
 
 export function ResearchArea({
   messages,
   onSendMessage,
   isLoading,
+  loadingStatusMessage,
   onClearConversation,
   onSelectCitation,
   selectedDocCount,
   totalReadyDocCount,
   isConnected,
+  provider = 'gemini',
   onOpenSettings,
+  conversationTitle,
+  onOpenHistory,
+  onNewConversation,
 }: ResearchAreaProps) {
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const isSubmittingRef = useRef(false);
 
   // Auto scroll to bottom on new message
   useEffect(() => {
@@ -50,14 +66,29 @@ export function ResearchArea({
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || isSubmittingRef.current) return;
 
+    isSubmittingRef.current = true;
     const query = input;
     setInput('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    await onSendMessage(query);
+    try {
+      await onSendMessage(query);
+    } finally {
+      isSubmittingRef.current = false;
+    }
+  };
+
+  const handleRetry = async (query: string, failedMessageId?: string) => {
+    if (isLoading || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    try {
+      await onSendMessage(query, { isRetry: true, failedMessageId });
+    } finally {
+      isSubmittingRef.current = false;
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -85,81 +116,72 @@ export function ResearchArea({
     'What were the primary limitations, risks, or caveats mentioned?',
   ];
 
-  // Helper to parse text and highlight [DocName, p. X] as clickable buttons
-  const renderMessageContent = (content: string, citations?: Citation[]) => {
-    // Regex matches [DocumentName.pdf, p. 3] or [DocumentName, p. 3]
-    const citationRegex = /\[([^\]]+?,\s*p\.\s*\d+)\]/g;
-    const parts = [];
-    let lastIndex = 0;
-    let match;
-
-    while ((match = citationRegex.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(content.substring(lastIndex, match.index));
-      }
-
-      const citationText = match[1]; // e.g. "Doc.pdf, p. 3"
-      const matchedCitation = citations?.find((c) => {
-        return citationText.toLowerCase().includes(`p. ${c.page_number}`) ||
-               citationText.toLowerCase().includes(`p.${c.page_number}`);
-      }) || (citations && citations[0]);
-
-      parts.push(
-        <button
-          key={match.index}
-          onClick={() => matchedCitation && onSelectCitation(matchedCitation)}
-          className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium bg-blue-950/70 text-blue-300 border border-blue-500/30 hover:bg-blue-900/60 transition-colors align-baseline"
-          title="Click to view source passage"
-        >
-          <span>[{citationText}]</span>
-        </button>
-      );
-
-      lastIndex = citationRegex.lastIndex;
-    }
-
-    if (lastIndex < content.length) {
-      parts.push(content.substring(lastIndex));
-    }
-
-    return (
-      <div className="whitespace-pre-wrap leading-relaxed text-sm text-slate-200 selection:bg-blue-500/30">
-        {parts.map((p, idx) => (typeof p === 'string' ? <span key={idx}>{p}</span> : p))}
-      </div>
-    );
-  };
-
   return (
     <div className="flex-1 flex flex-col h-full min-w-0 bg-slate-950/40 relative">
       {/* Top Scope & Action Bar */}
-      <div className="h-10 px-6 border-b border-slate-800/60 bg-slate-900/30 flex items-center justify-between text-xs text-slate-400">
-        <div className="flex items-center space-x-2">
-          <Layers className="w-3.5 h-3.5 text-blue-400" />
-          <span>
-            {selectedDocCount > 0 ? (
-              <span>
-                Search Scope: <strong className="text-slate-200">{selectedDocCount}</strong> of {totalReadyDocCount} document(s)
+      <div className="h-10 px-4 md:px-6 border-b border-slate-800/60 bg-slate-900/30 flex items-center justify-between text-xs text-slate-400">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="flex items-center space-x-1.5 shrink-0">
+            <Layers className="w-3.5 h-3.5 text-blue-400" />
+            <span>
+              {selectedDocCount > 0 ? (
+                <span>
+                  Scope: <strong className="text-slate-200">{selectedDocCount}</strong> of {totalReadyDocCount} doc{totalReadyDocCount === 1 ? '' : 's'}
+                </span>
+              ) : totalReadyDocCount > 0 ? (
+                <span>
+                  Scope: <strong className="text-slate-200">All {totalReadyDocCount}</strong> docs
+                </span>
+              ) : (
+                <span className="text-slate-500">No docs ready</span>
+              )}
+            </span>
+          </div>
+
+          {conversationTitle && (
+            <div className="hidden sm:flex items-center space-x-1.5 border-l border-slate-800 pl-3 min-w-0">
+              <span className="text-slate-500">Topic:</span>
+              <span className="text-slate-200 font-medium truncate max-w-[200px] md:max-w-[280px]" title={conversationTitle}>
+                {conversationTitle}
               </span>
-            ) : totalReadyDocCount > 0 ? (
-              <span>
-                Search Scope: <strong className="text-slate-200">All {totalReadyDocCount}</strong> document(s)
-              </span>
-            ) : (
-              <span className="text-slate-500">No documents ready for search</span>
-            )}
-          </span>
+            </div>
+          )}
         </div>
 
-        {messages.length > 0 && (
-          <button
-            onClick={onClearConversation}
-            className="flex items-center space-x-1 text-slate-400 hover:text-slate-200 transition-colors"
-            title="Clear research conversation"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>Clear Thread</span>
-          </button>
-        )}
+        <div className="flex items-center space-x-2 shrink-0">
+          {onOpenHistory && (
+            <button
+              onClick={onOpenHistory}
+              className="flex items-center space-x-1 px-2 py-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors"
+              title="View saved chat history"
+            >
+              <MessageSquare className="w-3 h-3 text-blue-400" />
+              <span className="hidden sm:inline">History</span>
+            </button>
+          )}
+
+          {onNewConversation && (
+            <button
+              onClick={onNewConversation}
+              className="flex items-center space-x-1 px-2 py-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors"
+              title="Start a new chat thread"
+            >
+              <Plus className="w-3 h-3 text-emerald-400" />
+              <span className="hidden sm:inline">New Chat</span>
+            </button>
+          )}
+
+          {messages.length > 0 && (
+            <button
+              onClick={onClearConversation}
+              className="flex items-center space-x-1 px-2 py-1 rounded text-slate-400 hover:text-rose-300 hover:bg-rose-950/20 transition-colors"
+              title="Clear messages in this conversation"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span className="hidden sm:inline">Clear</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Conversation Thread */}
@@ -208,15 +230,59 @@ export function ResearchArea({
               {/* Message Bubble */}
               <div
                 className={`max-w-3xl rounded-2xl px-5 py-4 border ${
-                  msg.role === 'user'
+                  msg.error
+                    ? 'bg-rose-950/40 border-rose-500/40 text-rose-200 shadow-xl'
+                    : msg.role === 'user'
                     ? 'bg-blue-600/15 border-blue-500/30 text-slate-100'
                     : 'bg-slate-900/80 border-slate-800/80 text-slate-200 shadow-xl'
                 }`}
               >
                 {/* Author Badge */}
-                <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-800/60 text-[11px] text-slate-400">
-                  <span className="font-semibold uppercase tracking-wider">
-                    {msg.role === 'user' ? 'Research Question' : 'Grounded Finding'}
+                <div
+                  className={`flex items-center justify-between mb-2 pb-1.5 border-b text-[11px] ${
+                    msg.error ? 'border-rose-800/50 text-rose-400' : 'border-slate-800/60 text-slate-400'
+                  }`}
+                >
+                  <span className="font-semibold uppercase tracking-wider flex items-center space-x-1.5">
+                    {msg.error ? (
+                      <>
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                        <span>
+                          {msg.errorType === 'invalid_key'
+                            ? 'Invalid API Key'
+                            : msg.errorType === 'overloaded'
+                            ? 'Model Overloaded / High Demand'
+                            : msg.errorType === 'quota_exhausted'
+                            ? 'Quota Exhausted'
+                            : msg.errorType === 'rate_limit'
+                            ? 'Rate Limit Reached'
+                            : msg.errorType === 'blocked'
+                            ? 'Content Blocked (Safety Filter)'
+                            : msg.errorType === 'empty'
+                            ? 'Empty Model Response'
+                            : msg.errorType === 'server_error'
+                            ? 'Provider Server Error (5xx)'
+                            : msg.errorType === 'timeout'
+                            ? 'Request Timeout'
+                            : msg.errorType === 'network'
+                            ? 'Network Connection Issue'
+                            : msg.errorType === 'not_found'
+                            ? 'Model Not Found'
+                            : 'Provider API Error'}
+                        </span>
+                      </>
+                    ) : msg.role === 'user' ? (
+                      <span>Research Question</span>
+                    ) : (
+                      <span className="flex items-center space-x-1.5">
+                        <span>Grounded Finding</span>
+                        {(provider === 'mock' || msg.content.includes('SIMULATED RESPONSE')) && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30">
+                            DEV SIMULATION
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </span>
                   {msg.role === 'assistant' && (
                     <button
@@ -240,7 +306,47 @@ export function ResearchArea({
                 </div>
 
                 {/* Body */}
-                {renderMessageContent(msg.content, msg.citations)}
+                <FormattedAnswer
+                  content={msg.content}
+                  citations={msg.citations}
+                  onSelectCitation={onSelectCitation}
+                  onContinue={() => onSendMessage('continue')}
+                />
+
+                {/* Error Recovery Actions */}
+                {msg.error && (
+                  <div className="mt-3 pt-3 border-t border-rose-800/40 flex flex-wrap items-center gap-2">
+                    {msg.retryQuery && msg.errorType !== 'invalid_key' && msg.errorType !== 'blocked' && (
+                      <button
+                        onClick={() => handleRetry(msg.retryQuery!, msg.id)}
+                        disabled={isLoading}
+                        className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-xs font-medium text-rose-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Retry Query</span>
+                      </button>
+                    )}
+                    {msg.errorType === 'invalid_key' && (
+                      <button
+                        onClick={onOpenSettings}
+                        className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-colors cursor-pointer"
+                      >
+                        <span>Update API Key</span>
+                      </button>
+                    )}
+                    {(msg.errorType === 'quota_exhausted' || msg.errorType === 'rate_limit') && (
+                      <a
+                        href={provider === 'openai' ? 'https://platform.openai.com/usage' : 'https://aistudio.google.com/app/plan_information'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 hover:text-slate-100 transition-colors"
+                      >
+                        <ExternalLink className="w-3 h-3 text-slate-400" />
+                        <span>Check Quota Dashboard</span>
+                      </a>
+                    )}
+                  </div>
+                )}
 
                 {/* Citation Chips Tray */}
                 {msg.citations && msg.citations.length > 0 && (
@@ -273,10 +379,16 @@ export function ResearchArea({
         {isLoading && (
           <div className="flex flex-col items-start">
             <div className="max-w-md rounded-2xl p-4 bg-slate-900/60 border border-slate-800 text-slate-300 flex items-center space-x-3 shadow-lg">
-              <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+              <Loader2 className="w-4 h-4 text-blue-400 animate-spin shrink-0" />
               <div className="text-xs space-y-0.5">
-                <p className="font-medium text-slate-200">Researching Documents</p>
-                <p className="text-slate-500 text-[11px]">Searching pgvector embeddings & formulating answer...</p>
+                <p className="font-medium text-slate-200">
+                  {loadingStatusMessage || 'Researching Documents'}
+                </p>
+                <p className="text-slate-500 text-[11px]">
+                  {loadingStatusMessage
+                    ? 'Processing document pipeline...'
+                    : 'Searching pgvector embeddings & formulating answer...'}
+                </p>
               </div>
             </div>
           </div>
@@ -330,7 +442,11 @@ export function ResearchArea({
 
           <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
             <span>Press Enter to submit, Shift+Enter for new line</span>
-            <span>Zero-owner-cost • Bring Your Own Key</span>
+            <span>
+              {provider === 'mock'
+                ? 'Mock Provider Active (Zero Cost • Simulated Mode)'
+                : 'Zero-owner-cost • Bring Your Own Key'}
+            </span>
           </div>
         </div>
       </div>

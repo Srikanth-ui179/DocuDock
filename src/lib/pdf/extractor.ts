@@ -16,7 +16,7 @@ export interface PDFExtractionResult {
 /**
  * Splits text into overlapping segments, attempting to break at sentence or paragraph boundaries.
  */
-function chunkText(text: string, pageNumber: number, startIndex: number, targetSize = 750, overlap = 120): ExtractedChunk[] {
+export function chunkText(text: string, pageNumber: number, startIndex: number, targetSize = 750, overlap = 120): ExtractedChunk[] {
   const chunks: ExtractedChunk[] = [];
   const normalized = text.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
 
@@ -84,8 +84,52 @@ function chunkText(text: string, pageNumber: number, startIndex: number, targetS
       });
     }
 
-    // Advance cursor with overlap
-    cursor = Math.max(cursor + 1, breakPoint - overlap);
+    // Advance cursor with overlap, ensuring chunk boundaries land on sentence, clause, or clean word boundaries
+    const rawTarget = breakPoint - overlap;
+    let nextCursor = -1;
+
+    // 1. Look for a sentence boundary near rawTarget (within +- 60 chars)
+    const overlapWindowStart = Math.max(cursor + 20, rawTarget - 60);
+    const overlapWindowEnd = Math.min(breakPoint - 20, rawTarget + 60);
+    const overlapWindow = normalized.substring(overlapWindowStart, overlapWindowEnd);
+    const sentMatches = Array.from(overlapWindow.matchAll(/[.!?\n]\s+/g));
+
+    if (sentMatches.length > 0) {
+      const bestMatch = sentMatches[sentMatches.length - 1];
+      if (bestMatch.index !== undefined) {
+        nextCursor = overlapWindowStart + bestMatch.index + bestMatch[0].length;
+      }
+    }
+
+    // 2. Look for a clause boundary (semicolon, comma, colon, bullet)
+    if (nextCursor === -1 || nextCursor <= cursor) {
+      const clauseMatches = Array.from(overlapWindow.matchAll(/[,;:\u2022\u00B7\uF0B7•·]\s+/g));
+      if (clauseMatches.length > 0) {
+        const bestMatch = clauseMatches[clauseMatches.length - 1];
+        if (bestMatch.index !== undefined) {
+          nextCursor = overlapWindowStart + bestMatch.index + bestMatch[0].length;
+        }
+      }
+    }
+
+    // 3. Fallback: snap to clean word boundary
+    if (nextCursor === -1 || nextCursor <= cursor) {
+      const candidate = Math.max(cursor + 1, rawTarget);
+      if (candidate >= breakPoint) {
+        nextCursor = cursor + 1;
+      } else if (candidate > 0 && normalized[candidate - 1] !== ' ' && normalized[candidate] !== ' ') {
+        // Inside a word: find the space preceding this word to keep word intact
+        const prevSpace = normalized.lastIndexOf(' ', candidate);
+        nextCursor = (prevSpace !== -1 && prevSpace > cursor) ? prevSpace + 1 : candidate;
+      } else {
+        // On or after a space: advance past any spaces
+        let c = candidate;
+        while (c < breakPoint && normalized[c] === ' ') c++;
+        nextCursor = c;
+      }
+    }
+
+    cursor = Math.max(cursor + 1, nextCursor);
   }
 
   return chunks;

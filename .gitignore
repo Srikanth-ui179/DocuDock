@@ -44,3 +44,8 @@ next-env.d.ts
 
 # Supabase CLI temp
 supabase/.temp/
+
+# Evaluation outputs and extracted PDF content
+EVALUATION_REPORT.md
+evaluation_results.json
+extracted_chunks.json

@@ -1,4 +1,4 @@
-export type AIProvider = 'gemini' | 'openai';
+export type AIProvider = 'gemini' | 'openai' | 'mock';
 
 export interface DocumentRecord {
   id: string;
@@ -47,6 +47,19 @@ export interface Citation {
   similarity: number;
 }
 
+export type ProviderErrorType =
+  | 'invalid_key'
+  | 'overloaded'
+  | 'rate_limit'
+  | 'quota_exhausted'
+  | 'blocked'
+  | 'empty'
+  | 'not_found'
+  | 'server_error'
+  | 'network'
+  | 'timeout'
+  | 'generic';
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -54,6 +67,17 @@ export interface ChatMessage {
   citations?: Citation[];
   timestamp: number;
   error?: boolean;
+  errorType?: ProviderErrorType;
+  retryQuery?: string;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  selectedDocIds: string[];
+  messages: ChatMessage[];
 }
 
 export interface ProviderConfig {
@@ -72,4 +96,24 @@ export interface ProviderOption {
   embeddingDim: 768 | 1536;
   chatModel: string;
   keyUrl: string;
+}
+
+export interface LLMGenerationResult {
+  text: string;
+  finishReason: string;
+  isTruncated: boolean;
+}
+
+export class ProviderError extends Error {
+  statusCode?: number;
+  provider?: AIProvider;
+  rawDetails?: string;
+
+  constructor(message: string, statusCode?: number, provider?: AIProvider, rawDetails?: string) {
+    super(message);
+    this.name = 'ProviderError';
+    this.statusCode = statusCode;
+    this.provider = provider;
+    this.rawDetails = rawDetails;
+  }
 }

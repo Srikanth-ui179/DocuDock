@@ -1,12 +1,134 @@
 @import "tailwindcss";
 
-:root {
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root,
+html.dark,
+[data-theme="dark"] {
+  color-scheme: dark;
   --background: #090d16;
   --foreground: #f1f5f9;
   --card: #0f172a;
   --card-border: #1e293b;
   --accent: #3b82f6;
   --accent-glow: rgba(59, 130, 246, 0.15);
+
+  --color-slate-950: #020618;
+  --color-slate-900: #0f172b;
+  --color-slate-800: #1d293d;
+  --color-slate-700: #314158;
+  --color-slate-600: #45556f;
+  --color-slate-500: #62748e;
+  --color-slate-400: #90a1b9;
+  --color-slate-300: #cad5e2;
+  --color-slate-200: #e1e7ef;
+  --color-slate-100: #f0f4f8;
+  --color-slate-50: #f8fafc;
+}
+
+html.light,
+[data-theme="light"] {
+  color-scheme: light;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-border: #e2e8f0;
+  --accent: #2563eb;
+  --accent-glow: rgba(37, 99, 235, 0.12);
+
+  /* Light mode slate palette remapping */
+  --color-slate-950: #f8fafc; /* canvas background */
+  --color-slate-900: #ffffff; /* panel / card / modal background */
+  --color-slate-800: #e2e8f0; /* borders / divider lines */
+  --color-slate-700: #cbd5e1; /* secondary borders / hover outlines */
+  --color-slate-600: #94a3b8; /* subtle borders / icons */
+  --color-slate-500: #64748b; /* placeholders */
+  --color-slate-400: #64748b; /* muted text / metadata */
+  --color-slate-300: #475569; /* secondary text */
+  --color-slate-200: #1e293b; /* body text */
+  --color-slate-100: #0f172a; /* headings / primary titles */
+  --color-slate-50: #020617;  /* deepest contrast */
+
+  /* Light mode alert / tag tints */
+  --color-blue-950: #eff6ff;
+  --color-blue-900: #dbeafe;
+  --color-blue-400: #2563eb;
+  --color-blue-300: #1d4ed8;
+  --color-blue-200: #1e40af;
+
+  --color-amber-950: #fffbeb;
+  --color-amber-900: #fef3c7;
+  --color-amber-400: #d97706;
+  --color-amber-300: #b45309;
+  --color-amber-200: #92400e;
+
+  --color-emerald-950: #f0fdf4;
+  --color-emerald-900: #dcfce7;
+  --color-emerald-400: #16a34a;
+  --color-emerald-300: #15803d;
+  --color-emerald-200: #166534;
+
+  --color-rose-950: #fff1f2;
+  --color-rose-900: #ffe4e6;
+  --color-rose-400: #e11d48;
+  --color-rose-300: #be123c;
+  --color-rose-200: #9f1239;
+}
+
+/* Explicit light mode overrides for opacity variants to guarantee crisp appearance */
+html.light .bg-slate-950\/80,
+[data-theme="light"] .bg-slate-950\/80 {
+  background-color: rgba(248, 250, 252, 0.85);
+}
+html.light .bg-slate-950\/60,
+[data-theme="light"] .bg-slate-950\/60 {
+  background-color: rgba(248, 250, 252, 0.7);
+}
+html.light .bg-slate-950\/50,
+[data-theme="light"] .bg-slate-950\/50 {
+  background-color: rgba(248, 250, 252, 0.6);
+}
+html.light .bg-slate-950\/40,
+[data-theme="light"] .bg-slate-950\/40 {
+  background-color: rgba(248, 250, 252, 0.5);
+}
+
+html.light .bg-slate-900\/90,
+[data-theme="light"] .bg-slate-900\/90 {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+html.light .bg-slate-900\/80,
+[data-theme="light"] .bg-slate-900\/80 {
+  background-color: rgba(255, 255, 255, 0.9);
+}
+html.light .bg-slate-900\/70,
+[data-theme="light"] .bg-slate-900\/70 {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+html.light .bg-slate-900\/60,
+[data-theme="light"] .bg-slate-900\/60 {
+  background-color: rgba(255, 255, 255, 0.7);
+}
+html.light .bg-slate-900\/50,
+[data-theme="light"] .bg-slate-900\/50 {
+  background-color: rgba(255, 255, 255, 0.6);
+}
+html.light .bg-slate-900\/40,
+[data-theme="light"] .bg-slate-900\/40 {
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+html.light .border-slate-800\/80,
+[data-theme="light"] .border-slate-800\/80 {
+  border-color: rgba(226, 232, 240, 0.8);
+}
+html.light .border-slate-800\/60,
+[data-theme="light"] .border-slate-800\/60 {
+  border-color: rgba(226, 232, 240, 0.6);
+}
+html.light .border-slate-700\/60,
+[data-theme="light"] .border-slate-700\/60 {
+  border-color: rgba(203, 213, 225, 0.6);
 }
 
 body {
@@ -34,4 +156,15 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
+}
+
+/* Custom light scrollbars */
+html.light ::-webkit-scrollbar-thumb,
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+html.light ::-webkit-scrollbar-thumb:hover,
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }

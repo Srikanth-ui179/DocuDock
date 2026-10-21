@@ -22,6 +22,7 @@ interface DocumentSidebarProps {
   onSelectAllDocs: () => void;
   onClearDocSelection: () => void;
   onUploadFile: (file: File) => Promise<void>;
+  onRetryDocument?: (doc: DocumentRecord) => Promise<void>;
   onRefresh: () => Promise<void>;
   isUploading: boolean;
   uploadStatusMessage: string;
@@ -34,6 +35,7 @@ export function DocumentSidebar({
   onSelectAllDocs,
   onClearDocSelection,
   onUploadFile,
+  onRetryDocument,
   onRefresh,
   isUploading,
   uploadStatusMessage,
@@ -42,10 +44,13 @@ export function DocumentSidebar({
   const [isDragging, setIsDragging] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [sidebarError, setSidebarError] = useState<string | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setSidebarError(null);
       await onUploadFile(file);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -65,6 +70,7 @@ export function DocumentSidebar({
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (file) {
+      setSidebarError(null);
       await onUploadFile(file);
     }
   };
@@ -74,23 +80,38 @@ export function DocumentSidebar({
       return;
     }
     setDeletingId(doc.id);
+    setSidebarError(null);
     try {
       await deleteDocument(doc.id, doc.file_path);
       await onRefresh();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to delete document');
+      setSidebarError(err instanceof Error ? err.message : 'Failed to delete document');
     } finally {
       setDeletingId(null);
     }
   };
 
+  const handleRetry = async (doc: DocumentRecord) => {
+    if (!onRetryDocument) return;
+    setRetryingId(doc.id);
+    setSidebarError(null);
+    try {
+      await onRetryDocument(doc);
+    } catch (err: unknown) {
+      setSidebarError(err instanceof Error ? err.message : 'Retry failed');
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const handleOpenPdf = async (doc: DocumentRecord) => {
     setOpeningId(doc.id);
+    setSidebarError(null);
     try {
       const url = await getDocumentSignedUrl(doc.file_path);
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Could not open document');
+      setSidebarError(err instanceof Error ? err.message : 'Could not open document');
     } finally {
       setOpeningId(null);
     }
@@ -155,6 +176,25 @@ export function DocumentSidebar({
           <span className="font-medium text-slate-300">Documents ({documents.length})</span>
         </div>
         <div className="flex items-center space-x-2">
+          {/* Quick cleanup for duplicate failed/stuck entries when a ready version already exists */}
+          {documents.some((d) => d.status !== 'ready' && documents.some((r) => r.status === 'ready' && r.name === d.name)) && (
+            <button
+              onClick={async () => {
+                const staleDuplicates = documents.filter(
+                  (d) => d.status !== 'ready' && documents.some((r) => r.status === 'ready' && r.name === d.name)
+                );
+                for (const dup of staleDuplicates) {
+                  await deleteDocument(dup.id, dup.file_path);
+                }
+                await onRefresh();
+              }}
+              className="text-[11px] text-amber-400 hover:text-amber-300 transition-colors"
+              title="Clean up stale or duplicate indexing attempts"
+            >
+              Clean Duplicates
+            </button>
+          )}
+
           {documents.length > 0 && (
             <button
               onClick={selectedDocIds.length === documents.length ? onClearDocSelection : onSelectAllDocs}
@@ -262,6 +302,22 @@ export function DocumentSidebar({
 
                 {/* Hover actions */}
                 <div className="mt-2 pt-2 border-t border-slate-800/60 flex items-center justify-end space-x-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                  {(isFailed || isIndexing) && onRetryDocument && (
+                    <button
+                      onClick={() => handleRetry(doc)}
+                      disabled={retryingId === doc.id || isUploading}
+                      className="p-1 px-1.5 rounded text-amber-400 hover:text-amber-300 hover:bg-amber-950/40 text-[11px] flex items-center space-x-1 transition-colors border border-amber-500/30 mr-auto"
+                      title={isIndexing ? 'Resume / Retry stuck indexing' : 'Retry indexing this document'}
+                    >
+                      {retryingId === doc.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3 h-3" />
+                      )}
+                      <span>{isIndexing ? 'Resume' : 'Retry'}</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleOpenPdf(doc)}
                     disabled={openingId === doc.id}
@@ -295,6 +351,18 @@ export function DocumentSidebar({
           })
         )}
       </div>
+
+      {sidebarError && (
+        <div className="p-3 m-3 mt-0 rounded-lg bg-rose-950/60 border border-rose-500/40 text-[11px] text-rose-300 flex items-start justify-between space-x-2">
+          <span>{sidebarError}</span>
+          <button
+            onClick={() => setSidebarError(null)}
+            className="text-rose-400 hover:text-rose-200 font-bold shrink-0"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

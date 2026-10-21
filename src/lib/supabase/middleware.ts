@@ -19,7 +19,9 @@ export async function updateSession(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        cookiesToSet.forEach(({ name, value, options }) =>
+          request.cookies.set({ name, value, ...options })
+        );
         supabaseResponse = NextResponse.next({
           request,
         });
@@ -30,16 +32,22 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // Do not run Supabase code on static assets
   const path = request.nextUrl.pathname;
 
   // IMPORTANT: Do not use getSession() as it reads from cookies without server validation.
-  // getUser() sends a request to the Supabase Auth server to securely validate the user.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getUser() sends a request to the Supabase Auth server to securely validate the user and
+  // automatically triggers token refresh via setAll when the access token is near expiry.
+  let user = null;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data?.user) {
+      user = data.user;
+    }
+  } catch (err: unknown) {
+    console.warn('Middleware auth verification error:', err);
+  }
 
-  // Route protection
+  // Route protection: unauthenticated users cannot access /workspace
   if (!user && path.startsWith('/workspace')) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
@@ -50,6 +58,7 @@ export async function updateSession(request: NextRequest) {
     return redirectResponse;
   }
 
+  // Authenticated users are redirected away from login or landing to /workspace
   if (user && (path === '/login' || path === '/')) {
     const url = request.nextUrl.clone();
     url.pathname = '/workspace';
